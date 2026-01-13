@@ -1,35 +1,27 @@
 import os
 import logging
-import http.server
-import socketserver
-import threading
+from flask import Flask
+from threading import Thread
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ChatJoinRequestHandler, ContextTypes
 
-# Простой HTTP сервер для Render
-def run_http_server():
-    class Handler(http.server.SimpleHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.send_header('Content-type', 'text/html')
-            self.end_headers()
-            self.wfile.write(b'<h1>🤖 Bot is running</h1>')
-    
-    with socketserver.TCPServer(("", 10000), Handler) as httpd:
-        print("🌐 HTTP сервер запущен на порту 10000")
-        httpd.serve_forever()
+# Flask сервер для Render
+app = Flask(__name__)
 
-# Запускаем HTTP сервер в фоне
-server_thread = threading.Thread(target=run_http_server, daemon=True)
-server_thread.start()
+@app.route('/')
+def home():
+    return "🤖 Бот работает! (для принятия заявок)"
 
-# Настройка логирования
+@app.route('/health')
+def health():
+    return "OK", 200
+
 logging.basicConfig(level=logging.INFO)
 
 # Конфигурация
-BOT_TOKEN = "8327774569:AAGHjpkt8KTbLTRL33FIcnfNU7M-tGHnpDE"
-CHANNEL_LINK = "https://t.me/+H8af58DeKVk3MTEy"
-MY_CHANNEL_ID = -1003529108574
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8327774569:AAGHjpkt8KTbLTRL33FIcnfNU7M-tGHnpDE")
+CHANNEL_LINK = os.environ.get("CHANNEL_LINK", "https://t.me/+H8af58DeKVk3MTEy")
+MY_CHANNEL_ID = int(os.environ.get("MY_CHANNEL_ID", "-1003529108574"))
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /start"""
@@ -77,22 +69,35 @@ async def accept_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE
         if "already" not in str(e).lower():
             print(f"Ошибка: {e}")
 
+def run_flask():
+    """Запуск веб-сервера"""
+    app.run(host='0.0.0.0', port=10000)
+
 def main():
     """Запуск бота"""
     print("=" * 60)
-    print("🤖 БОТ ЗАПУЩЕН")
+    print("🤖 БОТ ЗАПУЩЕН С ВЕБ-СЕРВЕРОМ")
     print("=" * 60)
-    print("🌐 HTTP сервер: порт 10000")
-    print("🤖 Telegram бот: активен")
-    print("=" * 60)
+    
+    # Запускаем Flask в отдельном потоке
+    flask_thread = Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
     
     # Запускаем Telegram бота
-    app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start_command))
-    app.add_handler(ChatJoinRequestHandler(accept_join_request))
+    bot_app = Application.builder().token(BOT_TOKEN).build()
+    bot_app.add_handler(CommandHandler("start", start_command))
+    bot_app.add_handler(ChatJoinRequestHandler(accept_join_request))
     
-    print("✅ Ожидание заявок...")
-    app.run_polling(drop_pending_updates=True)
+    print("✅ Веб-сервер: порт 10000")
+    print("✅ Telegram бот: активен")
+    print("=" * 60)
+    print("🚀 Ожидание заявок...")
+    
+    bot_app.run_polling(
+        drop_pending_updates=True,
+        allowed_updates=Update.ALL_TYPES
+    )
 
 if __name__ == '__main__':
     main()
